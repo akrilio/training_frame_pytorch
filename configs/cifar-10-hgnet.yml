@@ -1,0 +1,102 @@
+model:
+  name: HGNet
+  pretrained_model:
+  input_shape: &input_shape [ 32, 32 ]
+  structure:
+    - block_name: Stem
+      hidden_channel: 48
+      out_channel: 64
+      stride: [ 1, 1 ]
+    - block_name: [ HGBlock, ConvBNAct ]
+      num_block: [ 1, 1 ]
+      hidden_channel: [ 32, 64 ]
+      out_channel: [ 96, 384 ]
+      stride: [ 1, 2 ]
+      num_layers: 6
+      kernel_size: 3
+      padding: 1
+    - block_name: ConvBNAct
+      out_channel: 768
+      stride: 2
+      kernel_size: 2
+      groups: 384
+      act: False
+    - block_name: Rearrange
+      pattern: 'b c h w -> b (h w) c'
+    - block_name: [ HGBlockLinear, CTLinearLNAct ]
+      num_block: 4
+      hidden_channel: 128
+      out_channel: 768
+      num_layers: 6
+      groups: 4
+      num_token: 64
+    - block_name: AttnHead
+      hidden_channel: 384
+      out_channel: 10
+      head: 64
+      group: 6
+      # **kwargs
+
+datareader:
+  reader:
+    name: DatasetEditor
+    dataset_path: 'datasets/cifar10'
+  call:
+    name: read_cifar
+  # **other_params
+
+program:
+  name: Trainer
+  use_amp: True
+  stop_patience: 200
+  monite_value: 'loss'
+  compare_type: 'min'
+  log_dir: 'logs/HGNet'
+  log_items: 'scalar'
+  verbose: True
+  callbacks:
+    # name: Callbacks # optical
+    keys: [ precise, recall, mAP ]
+  num_epochs: 200
+  step_per_epoch: &step_per_epoch 150
+
+train:
+  dataset:
+    name: CifarDataset
+    input_shape: *input_shape
+    random: 'medium' # if SSLDataset ['strong', ...]
+  loader:
+    batch_size: 1024
+    step_per_epoch: *step_per_epoch
+    num_workers: 12
+    shuffle: true
+    pin_memory: True
+    persistent_workers: True
+    prefetch_factor: 2
+
+valid:
+  dataset:
+    name: CifarDataset
+    input_shape: *input_shape
+    random: 'valid'
+  loader:
+    batch_size: 1024
+    num_workers: 4
+    shuffle: False
+    pin_memory: True
+    persistent_workers: True
+    prefetch_factor: 2
+
+optimizer:
+  name: AdamW
+  lr: 1e-3
+  betas: [0.9, 0.999]
+  eps: 1e-8
+  weight_decay: 1e-2
+  lr_scheduler:
+      name: CosineAnnealingLR
+      T_max: 50000
+
+loss:
+  name: cross_entropy
+  # weight: ...
