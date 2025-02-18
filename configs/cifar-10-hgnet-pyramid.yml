@@ -1,0 +1,96 @@
+model:
+  name: HGNet
+  pretrained_model:
+  input_shape: &input_shape [ 32, 32 ]
+  structure:
+    - block_name: PyramidNet
+      out_block_index: [1, 2, 5, 6]
+      structure:
+        - block_name: Stem
+          hidden_channel: 48
+          out_channel: 64
+          stride: [ 1, 1 ]
+        - block_name: [ 'HGBlock', 'ConvBNAct' ]
+          num_block: [ 1, 1 ]
+          hidden_channel: [ 32, 64 ]
+          out_channel: [ 96, 384 ]
+          stride: [ 1, 2 ]
+          num_layers: 6
+          kernel_size: 3
+          padding: 1
+        - block_name: [ 'HGBlock', 'CTConvBNAct' ]
+          num_block: [ 3, 1 ]
+          hidden_channel: [ 128, 256 ]
+          out_channel: [ 768, 1536 ]
+          stride: [ 2, 2 ]
+          num_layers: 6
+          kernel_size: 5
+          padding: 2
+    - block_name: MultiAttnHead
+      num_heads: 4
+      in_channel: [96, 384, 768, 1536]
+      hidden_channel: 256
+      out_channel: 10
+      head: 64
+      group: 4
+      # **kwargs
+
+datareader:
+  name: DatasetEditor
+  call: read_cifar
+  dataset_path: 'datasets/cifar10'
+  # **other_params
+
+program:
+  name: Trainer
+  use_amp: True
+  stop_patience: 200
+  monite_value: 'loss'
+  compare_type: 'min'
+  log_dir: 'logs/HGNet'
+  log_items: 'scalar'
+  verbose: True
+  callbacks: ['precise', 'recall', 'mAP']
+  num_epochs: 200
+  step_per_epoch: &step_per_epoch 150
+
+train:
+  dataset:
+    name: CifarDataset
+    input_shape: *input_shape
+    random: 'medium' # if SSLDataset ['strong', ...]
+  loader:
+    batch_size: 1024
+    step_per_epoch: *step_per_epoch
+    num_workers: 12
+    shuffle: true
+    pin_memory: True
+    persistent_workers: True
+    prefetch_factor: 2
+
+valid:
+  dataset:
+    name: CifarDataset
+    input_shape: *input_shape
+    random: 'valid'
+  loader:
+    batch_size: 1024
+    num_workers: 4
+    shuffle: False
+    pin_memory: True
+    persistent_workers: True
+    prefetch_factor: 2
+
+optimizer:
+  name: AdamW
+  lr: 1e-3
+  betas: [0.9, 0.999]
+  eps: 1e-8
+  weight_decay: 1e-2
+  lr_scheduler:
+      name: CosineAnnealingLR
+      T_max: 50000
+
+loss:
+  name: cross_entropy
+  # weight: ...
